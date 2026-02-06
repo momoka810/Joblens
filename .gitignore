@@ -1,0 +1,9 @@
+# API設定ファイル（機密情報を含むため、Gitにコミットしない）
+api_key.txt
+config.js
+
+# その他の一般的な除外ファイル
+.DS_Store
+*.log
+node_modules/
+
