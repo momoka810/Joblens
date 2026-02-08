@@ -641,20 +641,28 @@ function formatJobComparisonPrompt(selectedJobs, userProfile) {
  * @returns {Promise<string>} - AIの回答テキスト
  */
 async function compareJobsWithDify(selectedJobs, userProfile) {
-  // APIキーの確認
-  if (!DIFY_API_KEY || DIFY_API_KEY === 'YOUR_API_KEY_HERE') {
-    console.error('APIキーが設定されていません。現在の値:', DIFY_API_KEY ? '設定済み（値は非表示）' : '未設定')
-    throw new Error('Dify APIキーが設定されていません。api_key.txtにAPIキーを設定してください。公開環境では、環境変数や別の方法でAPIキーを設定する必要があります。')
+  // 環境判定：ローカル環境か公開環境か
+  const isLocal = window.location.hostname === 'localhost' || 
+                  window.location.hostname === '127.0.0.1'
+  
+  console.log('環境判定:', { isLocal, hostname: window.location.hostname })
+  
+  // ローカル環境でのみAPIキーの確認
+  if (isLocal) {
+    if (!DIFY_API_KEY || DIFY_API_KEY === 'YOUR_API_KEY_HERE') {
+      console.error('APIキーが設定されていません。現在の値:', DIFY_API_KEY ? '設定済み（値は非表示）' : '未設定')
+      throw new Error('Dify APIキーが設定されていません。api_key.txtにAPIキーを設定してください。')
+    }
+    console.log('✅ ローカル環境: APIキーが設定されています')
+  } else {
+    console.log('✅ 公開環境: サーバーサイドプロキシを使用します')
   }
   
   // プロンプトを整形
   const query = formatJobComparisonPrompt(selectedJobs, userProfile)
+  console.log('プロンプト長:', query.length, '文字')
   
   try {
-    // 環境判定：ローカル環境か公開環境か
-    const isLocal = window.location.hostname === 'localhost' || 
-                    window.location.hostname === '127.0.0.1'
-    
     // ローカル環境: 直接Dify APIを呼び出す（api_key.txtを使用）
     // 公開環境: サーバーサイドプロキシ経由で呼び出す（環境変数を使用）
     const apiUrl = isLocal ? DIFY_API_URL : '/api/dify-proxy'
@@ -664,6 +672,8 @@ async function compareJobsWithDify(selectedJobs, userProfile) {
     } : {
       'Content-Type': 'application/json'
     }
+    
+    console.log('API呼び出し:', { apiUrl, isLocal, headersKeys: Object.keys(headers) })
     
     const response = await fetch(apiUrl, {
       method: 'POST',
