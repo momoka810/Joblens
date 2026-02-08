@@ -8,22 +8,36 @@ const DIFY_API_URL = 'https://api.dify.ai/v1/chat-messages'
 
 // api_key.txtからAPIキーを読み込む
 async function loadApiKey() {
-  try {
-    const response = await fetch('/api_key.txt')
-    if (response.ok) {
-      const apiKey = await response.text()
-      DIFY_API_KEY = apiKey.trim()
-      if (DIFY_API_KEY && DIFY_API_KEY !== 'YOUR_API_KEY_HERE') {
-        console.log('✅ Dify APIキーを読み込みました')
-      } else {
-        console.warn('⚠️ api_key.txtにAPIキーが設定されていません')
+  // 複数のパスを試す（VercelやGitHub Pagesに対応）
+  const possiblePaths = [
+    '/api_key.txt',
+    './api_key.txt',
+    '/project/api_key.txt',
+    'api_key.txt'
+  ]
+  
+  for (const path of possiblePaths) {
+    try {
+      const response = await fetch(path)
+      if (response.ok) {
+        const apiKey = await response.text()
+        DIFY_API_KEY = apiKey.trim()
+        if (DIFY_API_KEY && DIFY_API_KEY !== 'YOUR_API_KEY_HERE') {
+          console.log(`✅ Dify APIキーを読み込みました (${path})`)
+          return // 成功したら終了
+        } else {
+          console.warn(`⚠️ ${path}にAPIキーが設定されていません`)
+        }
       }
-    } else {
-      console.warn('⚠️ api_key.txtが見つかりません。直接設定してください。')
+    } catch (error) {
+      // 次のパスを試す
+      continue
     }
-  } catch (error) {
-    console.warn('⚠️ api_key.txtの読み込みに失敗しました:', error)
   }
+  
+  // すべてのパスで失敗した場合
+  console.warn('⚠️ api_key.txtが見つかりません。以下のパスを試しました:', possiblePaths)
+  console.warn('⚠️ 公開環境では、api_key.txtが正しく配置されているか確認してください。')
 }
 
 // ==========================================
@@ -368,7 +382,59 @@ compareButton.addEventListener('click', async () => {
     addToHistory('比較', `${selectedJobs.length}件の求人を比較しました（${titles}）`, comparisonResult)
   } catch (error) {
     console.error('比較エラー:', error)
-    alert('比較中にエラーが発生しました。もう一度お試しください。')
+    console.error('エラー詳細:', {
+      message: error.message,
+      name: error.name,
+      stack: error.stack
+    })
+    
+    // より詳細なエラーメッセージを表示
+    let errorMessage = '比較中にエラーが発生しました。\n\n'
+    
+    if (error.message.includes('APIキーが設定されていません')) {
+      errorMessage = '❌ Dify APIキーが設定されていません。\n\n'
+      errorMessage += '【原因】\n'
+      errorMessage += 'api_key.txtが読み込めていません。\n\n'
+      errorMessage += '【解決方法】\n'
+      errorMessage += '1. ローカル環境: project/api_key.txtにAPIキーを設定\n'
+      errorMessage += '2. 公開環境（Vercel）: 環境変数または別の方法でAPIキーを設定\n'
+      errorMessage += '3. ブラウザの開発者ツール（F12）のコンソールで詳細を確認'
+    } else if (error.message.includes('APIキーが無効')) {
+      errorMessage = '❌ Dify APIキーが無効です。\n\n'
+      errorMessage += 'api_key.txtの内容を確認してください。'
+    } else if (error.message.includes('利用制限')) {
+      errorMessage = '⚠️ APIの利用制限に達しました。\n\n'
+      errorMessage += 'しばらく待ってから再度お試しください。'
+    } else if (error.message.includes('ネットワークエラー')) {
+      errorMessage = '❌ ネットワークエラーが発生しました。\n\n'
+      errorMessage += 'インターネット接続を確認してください。'
+    } else if (error.message.includes('応答形式')) {
+      errorMessage = '❌ Dify APIからの応答形式が予期されない形式です。\n\n'
+      errorMessage += 'APIの設定を確認してください。\n\n'
+      errorMessage += 'エラー詳細: ' + error.message
+    } else {
+      errorMessage += `エラー内容: ${error.message}\n\n`
+      errorMessage += '詳細はブラウザの開発者ツール（F12）のコンソールを確認してください。'
+    }
+    
+    alert(errorMessage)
+    
+    // エラー情報を比較結果エリアに表示
+    comparisonGrid.innerHTML = `
+      <div class="result-card" style="border-left: 4px solid #ef4444;">
+        <h3><span class="icon">⚠️</span>エラーが発生しました</h3>
+        <div class="content">
+          <p style="color: #ef4444; font-weight: 600;">${error.message || '不明なエラーが発生しました'}</p>
+          <p style="margin-top: 12px; font-size: 0.875rem; color: #64748b;">
+            以下の点を確認してください：<br>
+            • APIキーが正しく設定されているか<br>
+            • インターネット接続が正常か<br>
+            • ブラウザの開発者ツール（F12）のコンソールで詳細を確認
+          </p>
+        </div>
+      </div>
+    `
+    comparisonSection.classList.add('visible')
   } finally {
     // ローディング状態を解除
     compareButton.disabled = false
@@ -577,19 +643,31 @@ function formatJobComparisonPrompt(selectedJobs, userProfile) {
 async function compareJobsWithDify(selectedJobs, userProfile) {
   // APIキーの確認
   if (!DIFY_API_KEY || DIFY_API_KEY === 'YOUR_API_KEY_HERE') {
-    throw new Error('Dify APIキーが設定されていません。api_key.txtにAPIキーを設定してください。')
+    console.error('APIキーが設定されていません。現在の値:', DIFY_API_KEY ? '設定済み（値は非表示）' : '未設定')
+    throw new Error('Dify APIキーが設定されていません。api_key.txtにAPIキーを設定してください。公開環境では、環境変数や別の方法でAPIキーを設定する必要があります。')
   }
   
   // プロンプトを整形
   const query = formatJobComparisonPrompt(selectedJobs, userProfile)
   
   try {
-    const response = await fetch(DIFY_API_URL, {
+    // 環境判定：ローカル環境か公開環境か
+    const isLocal = window.location.hostname === 'localhost' || 
+                    window.location.hostname === '127.0.0.1'
+    
+    // ローカル環境: 直接Dify APIを呼び出す（api_key.txtを使用）
+    // 公開環境: サーバーサイドプロキシ経由で呼び出す（環境変数を使用）
+    const apiUrl = isLocal ? DIFY_API_URL : '/api/dify-proxy'
+    const headers = isLocal ? {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${DIFY_API_KEY}`
+    } : {
+      'Content-Type': 'application/json'
+    }
+    
+    const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DIFY_API_KEY}`
-      },
+      headers: headers,
       body: JSON.stringify({
         inputs: {},
         query: query,
@@ -600,23 +678,69 @@ async function compareJobsWithDify(selectedJobs, userProfile) {
     
     if (!response.ok) {
       // エラーレスポンスの詳細を取得
-      const errorText = await response.text()
+      let errorText = ''
+      try {
+        const errorData = await response.json()
+        errorText = errorData.message || errorData.error || JSON.stringify(errorData)
+      } catch (e) {
+        errorText = await response.text()
+      }
+      
       console.error('Dify APIエラー:', response.status, response.statusText, errorText)
       
+      const isLocal = window.location.hostname === 'localhost' || 
+                      window.location.hostname === '127.0.0.1'
+      
       if (response.status === 401) {
-        throw new Error('APIキーが無効です。api_key.txtの内容を確認してください。')
+        throw new Error(isLocal 
+          ? 'APIキーが無効です。api_key.txtの内容を確認してください。'
+          : 'APIキーが無効です。Vercelの環境変数DIFY_API_KEYを確認してください。')
       } else if (response.status === 429) {
         throw new Error('APIの利用制限に達しました。しばらく待ってから再度お試しください。')
+      } else if (response.status === 500) {
+        throw new Error('サーバーエラーが発生しました。Vercelの環境変数DIFY_API_KEYが設定されているか確認してください。')
       } else {
-        throw new Error(`APIエラー: ${response.status} ${response.statusText}`)
+        throw new Error(`APIエラー: ${response.status} ${response.statusText} - ${errorText}`)
       }
     }
     
     const data = await response.json()
+    console.log('Dify API応答:', data) // デバッグ用
     
     // Dify APIの応答形式に応じて調整
     // 一般的には data.answer または data.message に回答が含まれる
-    const answer = data.answer || data.message || data.text || '応答を取得できませんでした'
+    // Difyのバージョンによって異なる可能性があるため、複数のパターンを試す
+    let answer = null
+    
+    // パターン1: data.answer（一般的な形式）
+    if (data.answer) {
+      answer = data.answer
+    }
+    // パターン2: data.message
+    else if (data.message) {
+      answer = data.message
+    }
+    // パターン3: data.text
+    else if (data.text) {
+      answer = data.text
+    }
+    // パターン4: data.content
+    else if (data.content) {
+      answer = data.content
+    }
+    // パターン5: data.data.answer（ネストされた形式）
+    else if (data.data && data.data.answer) {
+      answer = data.data.answer
+    }
+    // パターン6: 文字列として直接返される場合
+    else if (typeof data === 'string') {
+      answer = data
+    }
+    
+    if (!answer || answer.trim() === '') {
+      console.error('Dify API応答形式エラー:', data)
+      throw new Error('Dify APIからの応答形式が予期されない形式です。APIの設定を確認してください。応答データ: ' + JSON.stringify(data).substring(0, 200))
+    }
     
     return answer
   } catch (error) {
