@@ -1,5 +1,0 @@
-# サーバー起動コマンド（コピー&ペースト用）
-
-cd "/Users/momokaiwasaki/Documents/AIエンジニア講座/7-3-2_Dify×Bolt.new/project"
-python3 server.py
-

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "echo 'No build needed for static site'",
     "preview": "vite preview"
   },
   "devDependencies": {
