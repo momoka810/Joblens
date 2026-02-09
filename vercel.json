@@ -4,11 +4,19 @@
   "outputDirectory": "project",
   "builds": [
     {
+      "src": "api/**",
+      "use": "@vercel/node"
+    },
+    {
       "src": "project/**",
       "use": "@vercel/static"
     }
   ],
   "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
     {
       "src": "/(.*)",
       "dest": "/project/$1"

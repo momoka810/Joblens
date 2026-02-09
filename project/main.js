@@ -697,8 +697,9 @@ async function compareJobsWithDify(selectedJobs, userProfile) {
     })
     
     // プロキシが404または500エラーの場合、直接APIを試す（フォールバック）
-    // 注意: レスポンスボディを読み込む前に、ステータスコードをチェックする
-    if (!isLocal && useProxy && (response.status === 404 || response.status === 500)) {
+    // 重要: レスポンスボディを読み込む前に、ステータスコードをチェックする
+    // 404エラーの場合、レスポンスボディを読み込まずにフォールバック処理を行う
+    if (!isLocal && useProxy && !response.ok && (response.status === 404 || response.status === 500)) {
       console.warn('⚠️ プロキシが失敗しました（ステータス:', response.status, '）。直接APIを試します...')
       
       // api_key.txtからAPIキーを再読み込み
@@ -740,11 +741,17 @@ async function compareJobsWithDify(selectedJobs, userProfile) {
       // 注意: response.text()は1回だけ呼び出せる
       let responseText = ''
       try {
-        responseText = await response.text()
+        // response.clone()を使って、レスポンスボディを安全に読み込む
+        const clonedResponse = response.clone()
+        responseText = await clonedResponse.text()
       } catch (e) {
-        // レスポンスボディが既に読み込まれている場合
+        // レスポンスボディが既に読み込まれている場合、またはcloneできない場合
         console.error('⚠️ レスポンスボディの読み込みエラー:', e)
-        responseText = 'エラーレスポンスの内容を取得できませんでした'
+        try {
+          responseText = await response.text()
+        } catch (e2) {
+          responseText = `HTTP ${response.status}: ${response.statusText}`
+        }
       }
       
       if (responseText && responseText !== 'エラーレスポンスの内容を取得できませんでした') {
