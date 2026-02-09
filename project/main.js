@@ -3,7 +3,7 @@
 // ==========================================
 
 // Dify API設定
-let DIFY_API_KEY = 'YOUR_API_KEY_HERE'
+let DIFY_API_KEY = 'YOUR_API_KEY_HERE' // 初期値
 const DIFY_API_URL = 'https://api.dify.ai/v1/chat-messages'
 
 // api_key.txtからAPIキーを読み込む
@@ -664,18 +664,28 @@ async function compareJobsWithDify(selectedJobs, userProfile) {
   
   try {
     // ローカル環境: 直接Dify APIを呼び出す（api_key.txtを使用）
-    // 公開環境: サーバーサイドプロキシ経由で呼び出す（環境変数を使用）
-    const apiUrl = isLocal ? DIFY_API_URL : '/api/dify-proxy'
-    const headers = isLocal ? {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${DIFY_API_KEY}`
-    } : {
-      'Content-Type': 'application/json'
+    // 公開環境: まずプロキシを試し、失敗したら直接APIを呼び出す（フォールバック）
+    let apiUrl, headers, useProxy = false
+    
+    if (isLocal) {
+      // ローカル環境: 直接Dify APIを呼び出す
+      apiUrl = DIFY_API_URL
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DIFY_API_KEY}`
+      }
+    } else {
+      // 公開環境: プロキシを試す
+      apiUrl = '/api/dify-proxy'
+      headers = {
+        'Content-Type': 'application/json'
+      }
+      useProxy = true
     }
     
-    console.log('API呼び出し:', { apiUrl, isLocal, headersKeys: Object.keys(headers) })
+    console.log('🚀 API呼び出し開始:', { apiUrl, isLocal, useProxy, hasApiKey: !!DIFY_API_KEY })
     
-    const response = await fetch(apiUrl, {
+    let response = await fetch(apiUrl, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify({
@@ -686,31 +696,94 @@ async function compareJobsWithDify(selectedJobs, userProfile) {
       })
     })
     
-    if (!response.ok) {
-      // エラーレスポンスの詳細を取得
-      let errorText = ''
-      try {
-        const errorData = await response.json()
-        errorText = errorData.message || errorData.error || JSON.stringify(errorData)
-      } catch (e) {
-        errorText = await response.text()
+    // プロキシが404または500エラーの場合、直接APIを試す（フォールバック）
+    // 注意: レスポンスボディを読み込む前に、ステータスコードをチェックする
+    if (!isLocal && useProxy && (response.status === 404 || response.status === 500)) {
+      console.warn('⚠️ プロキシが失敗しました（ステータス:', response.status, '）。直接APIを試します...')
+      
+      // api_key.txtからAPIキーを再読み込み
+      if (!DIFY_API_KEY || DIFY_API_KEY === 'YOUR_API_KEY_HERE') {
+        await loadApiKey()
       }
       
-      console.error('Dify APIエラー:', response.status, response.statusText, errorText)
+      if (DIFY_API_KEY && DIFY_API_KEY !== 'YOUR_API_KEY_HERE') {
+        console.log('✅ フォールバック: 直接Dify APIを呼び出します')
+        apiUrl = DIFY_API_URL
+        headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${DIFY_API_KEY}`
+        }
+        
+        // 新しいリクエストを送信
+        response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({
+            inputs: {},
+            query: query,
+            response_mode: 'blocking',
+            user: 'test-user'
+          })
+        })
+      } else {
+        // APIキーが設定されていない場合、エラーメッセージを返す
+        throw new Error('APIキーが設定されていません。api_key.txtを確認してください。')
+      }
+    }
+    
+    if (!response.ok) {
+      // エラーレスポンスの詳細を取得（レスポンスボディは1回だけ読み込む）
+      let errorText = ''
+      let errorData = null
       
-      const isLocal = window.location.hostname === 'localhost' || 
-                      window.location.hostname === '127.0.0.1'
+      // レスポンスボディをテキストとして取得（JSONパースは後で試す）
+      // 注意: response.text()は1回だけ呼び出せる
+      let responseText = ''
+      try {
+        responseText = await response.text()
+      } catch (e) {
+        // レスポンスボディが既に読み込まれている場合
+        console.error('⚠️ レスポンスボディの読み込みエラー:', e)
+        responseText = 'エラーレスポンスの内容を取得できませんでした'
+      }
+      
+      if (responseText && responseText !== 'エラーレスポンスの内容を取得できませんでした') {
+        try {
+          // JSONとしてパースを試みる
+          errorData = JSON.parse(responseText)
+          errorText = errorData.message || errorData.error || JSON.stringify(errorData)
+        } catch (e) {
+          // JSONでない場合はテキストをそのまま使用
+          errorText = responseText
+        }
+      } else {
+        errorText = `HTTP ${response.status}: ${response.statusText}`
+      }
+      
+      console.error('❌ Dify APIエラー詳細:', {
+        status: response.status,
+        statusText: response.statusText,
+        errorText: errorText,
+        errorData: errorData,
+        url: apiUrl,
+        isLocal: isLocal
+      })
       
       if (response.status === 401) {
         throw new Error(isLocal 
           ? 'APIキーが無効です。api_key.txtの内容を確認してください。'
           : 'APIキーが無効です。Vercelの環境変数DIFY_API_KEYを確認してください。')
+      } else if (response.status === 404) {
+        throw new Error(isLocal
+          ? 'Dify APIエンドポイントが見つかりません。API URLを確認してください。'
+          : 'プロキシエンドポイント（/api/dify-proxy）が見つかりません。\n\nVercelの設定を確認してください：\n1. api/dify-proxy.jsが正しく配置されているか\n2. vercel.jsonの設定を確認\n3. Vercelの再デプロイが必要かもしれません')
       } else if (response.status === 429) {
         throw new Error('APIの利用制限に達しました。しばらく待ってから再度お試しください。')
       } else if (response.status === 500) {
-        throw new Error('サーバーエラーが発生しました。Vercelの環境変数DIFY_API_KEYが設定されているか確認してください。')
+        const serverError = errorData?.message || errorText
+        throw new Error(`サーバーエラー: ${serverError}\n\nVercelの環境変数DIFY_API_KEYが設定されているか確認してください。`)
       } else {
-        throw new Error(`APIエラー: ${response.status} ${response.statusText} - ${errorText}`)
+        throw new Error(`APIエラー (${response.status}): ${response.statusText}\n\n詳細: ${errorText}`)
       }
     }
     
