@@ -13,7 +13,10 @@ async function loadApiKey() {
     '/api_key.txt',
     './api_key.txt',
     '/project/api_key.txt',
-    'api_key.txt'
+    '/project/public/api_key.txt',
+    'api_key.txt',
+    'project/api_key.txt',
+    'project/public/api_key.txt'
   ]
   
   for (const path of possiblePaths) {
@@ -645,47 +648,37 @@ async function compareJobsWithDify(selectedJobs, userProfile) {
   const isLocal = window.location.hostname === 'localhost' || 
                   window.location.hostname === '127.0.0.1'
   
-  console.log('環境判定:', { isLocal, hostname: window.location.hostname })
-  
-  // ローカル環境でのみAPIキーの確認
-  if (isLocal) {
-    if (!DIFY_API_KEY || DIFY_API_KEY === 'YOUR_API_KEY_HERE') {
-      console.error('APIキーが設定されていません。現在の値:', DIFY_API_KEY ? '設定済み（値は非表示）' : '未設定')
-      throw new Error('Dify APIキーが設定されていません。api_key.txtにAPIキーを設定してください。')
-    }
-    console.log('✅ ローカル環境: APIキーが設定されています')
-  } else {
-    console.log('✅ 公開環境: サーバーサイドプロキシを使用します')
-  }
+  console.log('🔍 環境判定:', { isLocal, hostname: window.location.hostname })
   
   // プロンプトを整形
   const query = formatJobComparisonPrompt(selectedJobs, userProfile)
-  console.log('プロンプト長:', query.length, '文字')
+  console.log('📝 プロンプト生成完了:', { length: query.length, jobsCount: selectedJobs.length })
+  
+  // APIキーを確実に読み込む（まだ読み込まれていない場合）
+  if (!DIFY_API_KEY || DIFY_API_KEY === 'YOUR_API_KEY_HERE') {
+    console.log('📥 APIキーを読み込み中...')
+    await loadApiKey()
+  }
+  
+  // APIキーの確認
+  if (!DIFY_API_KEY || DIFY_API_KEY === 'YOUR_API_KEY_HERE') {
+    console.error('❌ APIキーが設定されていません')
+    throw new Error('Dify APIキーが設定されていません。\n\n【解決方法】\n1. ローカル環境: project/api_key.txtにAPIキーを設定\n2. 公開環境: project/public/api_key.txtにAPIキーを設定（静的ファイルとして配信）')
+  }
+  
+  console.log('✅ APIキーが設定されています')
   
   try {
-    // ローカル環境: 直接Dify APIを呼び出す（api_key.txtを使用）
-    // 公開環境: まずプロキシを試し、失敗したら直接APIを呼び出す（フォールバック）
-    let apiUrl, headers, useProxy = false
-    
-    if (isLocal) {
-      // ローカル環境: 直接Dify APIを呼び出す
-      apiUrl = DIFY_API_URL
-      headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DIFY_API_KEY}`
-      }
-    } else {
-      // 公開環境: プロキシを試す
-      apiUrl = '/api/dify-proxy'
-      headers = {
-        'Content-Type': 'application/json'
-      }
-      useProxy = true
+    // すべての環境で直接Dify APIを呼び出す（プロキシは使わない）
+    const apiUrl = DIFY_API_URL
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${DIFY_API_KEY}`
     }
     
-    console.log('🚀 API呼び出し開始:', { apiUrl, isLocal, useProxy, hasApiKey: !!DIFY_API_KEY })
+    console.log('🚀 Dify API呼び出し開始:', { apiUrl, isLocal })
     
-    let response = await fetch(apiUrl, {
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify({
@@ -695,42 +688,6 @@ async function compareJobsWithDify(selectedJobs, userProfile) {
         user: 'test-user'
       })
     })
-    
-    // プロキシが404または500エラーの場合、直接APIを試す（フォールバック）
-    // 重要: レスポンスボディを読み込む前に、ステータスコードをチェックする
-    // 404エラーの場合、レスポンスボディを読み込まずにフォールバック処理を行う
-    if (!isLocal && useProxy && !response.ok && (response.status === 404 || response.status === 500)) {
-      console.warn('⚠️ プロキシが失敗しました（ステータス:', response.status, '）。直接APIを試します...')
-      
-      // api_key.txtからAPIキーを再読み込み
-      if (!DIFY_API_KEY || DIFY_API_KEY === 'YOUR_API_KEY_HERE') {
-        await loadApiKey()
-      }
-      
-      if (DIFY_API_KEY && DIFY_API_KEY !== 'YOUR_API_KEY_HERE') {
-        console.log('✅ フォールバック: 直接Dify APIを呼び出します')
-        apiUrl = DIFY_API_URL
-        headers = {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${DIFY_API_KEY}`
-        }
-        
-        // 新しいリクエストを送信
-        response = await fetch(apiUrl, {
-          method: 'POST',
-          headers: headers,
-          body: JSON.stringify({
-            inputs: {},
-            query: query,
-            response_mode: 'blocking',
-            user: 'test-user'
-          })
-        })
-      } else {
-        // APIキーが設定されていない場合、エラーメッセージを返す
-        throw new Error('APIキーが設定されていません。api_key.txtを確認してください。')
-      }
-    }
     
     if (!response.ok) {
       // エラーレスポンスの詳細を取得（レスポンスボディは1回だけ読み込む）
