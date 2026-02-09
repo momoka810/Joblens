@@ -9,12 +9,16 @@ const DIFY_API_URL = 'https://api.dify.ai/v1/chat-messages'
 // api_key.txtからAPIキーを読み込む
 async function loadApiKey() {
   // 複数のパスを試す（VercelやGitHub Pagesに対応）
+  // Vercelでは outputDirectory: "project" のため、/project/ がルートになる
   const possiblePaths = [
-    '/api_key.txt',
+    '/api_key.txt',                    // ルート直下
+    '/public/api_key.txt',              // Vercel: /project/public/api_key.txt → /public/api_key.txt
+    '/project/api_key.txt',             // 直接パス
+    '/project/public/api_key.txt',      // 直接パス
     './api_key.txt',
-    '/project/api_key.txt',
-    '/project/public/api_key.txt',
+    './public/api_key.txt',
     'api_key.txt',
+    'public/api_key.txt',
     'project/api_key.txt',
     'project/public/api_key.txt'
   ]
@@ -34,6 +38,7 @@ async function loadApiKey() {
       }
     } catch (error) {
       // 次のパスを試す
+      console.log(`❌ ${path} の読み込みに失敗:`, error.message)
       continue
     }
   }

@@ -2,16 +2,6 @@
   "version": 2,
   "buildCommand": "",
   "outputDirectory": "project",
-  "builds": [
-    {
-      "src": "api/**",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "project/**",
-      "use": "@vercel/static"
-    }
-  ],
   "routes": [
     {
       "src": "/api/(.*)",

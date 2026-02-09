@@ -1,6 +1,8 @@
 # API設定ファイル（機密情報を含むため、Gitにコミットしない）
 api_key.txt
 config.js
+# ただし、project/public/api_key.txtは静的ファイルとして配信するため、コミットする
+!project/public/api_key.txt
 
 # その他の一般的な除外ファイル
 .DS_Store
